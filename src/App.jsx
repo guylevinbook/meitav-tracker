@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import confetti from "canvas-confetti";
 import { supabase } from "./lib/supabase";
-import { enablePushNotifications } from "./lib/push";
+import {
+  enablePushNotifications,
+  isPushEnabled,
+} from "./lib/push";
 import "./App.css";
 
 const successMessages = [
@@ -76,46 +79,24 @@ const monthNames = [
   "דצמבר",
 ];
 
-const weekDays = [
-  "א",
-  "ב",
-  "ג",
-  "ד",
-  "ה",
-  "ו",
-  "ש",
-];
+const weekDays = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 
 function getDateKey(date) {
   const year = date.getFullYear();
-  const month = String(
-    date.getMonth() + 1
-  ).padStart(2, "0");
-  const day = String(
-    date.getDate()
-  ).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
 function dateFromKey(key) {
-  const [year, month, day] =
-    key.split("-").map(Number);
+  const [year, month, day] = key.split("-").map(Number);
 
-  return new Date(
-    year,
-    month - 1,
-    day
-  );
+  return new Date(year, month - 1, day);
 }
 
 function getRandomMessage(messages) {
-  return messages[
-    Math.floor(
-      Math.random() *
-        messages.length
-    )
-  ];
+  return messages[Math.floor(Math.random() * messages.length)];
 }
 
 function rowsToData(rows) {
@@ -132,95 +113,51 @@ function rowsToData(rows) {
 
 function isFutureDate(date) {
   const today = new Date();
-
-  today.setHours(
-    0,
-    0,
-    0,
-    0
-  );
+  today.setHours(0, 0, 0, 0);
 
   const check = new Date(date);
-
-  check.setHours(
-    0,
-    0,
-    0,
-    0
-  );
+  check.setHours(0, 0, 0, 0);
 
   return check > today;
 }
 
 function calculateCurrentStreak(data) {
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  today.setHours(
-    0,
-    0,
-    0,
-    0
-  );
+  const todayKey = getDateKey(today);
 
-  const todayKey =
-    getDateKey(today);
-
-  if (
-    data[todayKey]?.answer ===
-    "no"
-  ) {
+  if (data[todayKey]?.answer === "no") {
     return 0;
   }
 
-  let cursor =
-    new Date(today);
+  let cursor = new Date(today);
 
-  if (
-    !data[todayKey]
-  ) {
-    cursor.setDate(
-      cursor.getDate() - 1
-    );
+  if (!data[todayKey]) {
+    cursor.setDate(cursor.getDate() - 1);
   }
 
   let streak = 0;
 
   while (true) {
-    const key =
-      getDateKey(cursor);
+    const key = getDateKey(cursor);
 
-    if (
-      data[key]?.answer !==
-      "yes"
-    ) {
+    if (data[key]?.answer !== "yes") {
       break;
     }
 
     streak += 1;
-
-    cursor.setDate(
-      cursor.getDate() - 1
-    );
+    cursor.setDate(cursor.getDate() - 1);
   }
 
   return streak;
 }
 
 function calculateBestStreak(data) {
-  const yesDates =
-    Object.entries(data)
-      .filter(
-        ([, value]) =>
-          value.answer === "yes"
-      )
-      .map(([key]) =>
-        dateFromKey(key)
-      )
-      .sort(
-        (a, b) =>
-          a.getTime() -
-          b.getTime()
-      );
+  const yesDates = Object.entries(data)
+    .filter(([, value]) => value.answer === "yes")
+    .map(([key]) => dateFromKey(key))
+    .sort((a, b) => a.getTime() - b.getTime());
 
   if (!yesDates.length) {
     return 0;
@@ -229,31 +166,14 @@ function calculateBestStreak(data) {
   let best = 1;
   let current = 1;
 
-  for (
-    let i = 1;
-    i < yesDates.length;
-    i += 1
-  ) {
-    const previous =
-      new Date(
-        yesDates[i - 1]
-      );
+  for (let i = 1; i < yesDates.length; i += 1) {
+    const previous = new Date(yesDates[i - 1]);
 
-    previous.setDate(
-      previous.getDate() + 1
-    );
+    previous.setDate(previous.getDate() + 1);
 
-    if (
-      getDateKey(previous) ===
-      getDateKey(
-        yesDates[i]
-      )
-    ) {
+    if (getDateKey(previous) === getDateKey(yesDates[i])) {
       current += 1;
-      best = Math.max(
-        best,
-        current
-      );
+      best = Math.max(best, current);
     } else {
       current = 1;
     }
@@ -262,40 +182,23 @@ function calculateBestStreak(data) {
   return best;
 }
 
-function getCurrentStreakStart(
-  data
-) {
-  const today =
-    new Date();
+function getCurrentStreakStart(data) {
+  const today = new Date();
+  const todayKey = getDateKey(today);
 
-  const todayKey =
-    getDateKey(today);
-
-  if (
-    data[todayKey]?.answer !==
-    "yes"
-  ) {
+  if (data[todayKey]?.answer !== "yes") {
     return null;
   }
 
-  let cursor =
-    new Date(today);
+  let cursor = new Date(today);
 
   while (true) {
-    const previous =
-      new Date(cursor);
+    const previous = new Date(cursor);
+    previous.setDate(previous.getDate() - 1);
 
-    previous.setDate(
-      previous.getDate() - 1
-    );
+    const previousKey = getDateKey(previous);
 
-    const previousKey =
-      getDateKey(previous);
-
-    if (
-      data[previousKey]
-        ?.answer !== "yes"
-    ) {
+    if (data[previousKey]?.answer !== "yes") {
       break;
     }
 
@@ -305,41 +208,20 @@ function getCurrentStreakStart(
   return getDateKey(cursor);
 }
 
-function getMonthStats(
-  data,
-  year,
-  month
-) {
+function getMonthStats(data, year, month) {
   let yes = 0;
   let no = 0;
 
-  Object.entries(data).forEach(
-    ([key, entry]) => {
-      const date =
-        dateFromKey(key);
+  Object.entries(data).forEach(([key, entry]) => {
+    const date = dateFromKey(key);
 
-      if (
-        date.getFullYear() !==
-          year ||
-        date.getMonth() !==
-          month
-      ) {
-        return;
-      }
-
-      if (
-        entry.answer === "yes"
-      ) {
-        yes += 1;
-      }
-
-      if (
-        entry.answer === "no"
-      ) {
-        no += 1;
-      }
+    if (date.getFullYear() !== year || date.getMonth() !== month) {
+      return;
     }
-  );
+
+    if (entry.answer === "yes") yes += 1;
+    if (entry.answer === "no") no += 1;
+  });
 
   const total = yes + no;
 
@@ -349,154 +231,94 @@ function getMonthStats(
     total,
     percentage:
       total > 0
-        ? Math.round(
-            (yes / total) *
-              100
-          )
+        ? Math.round((yes / total) * 100)
         : 0,
   };
 }
 
 function App() {
-  const today = useMemo(
-    () => new Date(),
-    []
+  const today = useMemo(() => new Date(), []);
+  const todayKey = getDateKey(today);
+
+  const [screen, setScreen] = useState("today");
+  const [progressView, setProgressView] = useState("month");
+
+  const [data, setData] = useState({});
+
+  const [selectedMonth, setSelectedMonth] = useState(
+    new Date(today.getFullYear(), today.getMonth(), 1)
   );
 
-  const todayKey =
-    getDateKey(today);
+  const [celebration, setCelebration] = useState(null);
+  const [editingDate, setEditingDate] = useState(null);
 
-  const [
-    screen,
-    setScreen,
-  ] = useState("today");
+  const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState("");
 
-  const [
-    progressView,
-    setProgressView,
-  ] = useState("month");
+  const [notificationStatus, setNotificationStatus] = useState("");
+  const [notificationsEnabled, setNotificationsEnabled] =
+    useState(false);
 
-  const [
+  const todayEntry = data[todayKey];
+
+  const streak = calculateCurrentStreak(data);
+  const bestStreak = calculateBestStreak(data);
+
+  const currentMonthStats = getMonthStats(
     data,
-    setData,
-  ] = useState({});
-
-  const [
-    selectedMonth,
-    setSelectedMonth,
-  ] = useState(
-    new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      1
-    )
+    selectedMonth.getFullYear(),
+    selectedMonth.getMonth()
   );
 
-  const [
-    celebration,
-    setCelebration,
-  ] = useState(null);
+  const nextMilestone = milestones.find(
+    (milestone) => milestone.days > streak
+  );
 
-  const [
-    editingDate,
-    setEditingDate,
-  ] = useState(null);
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-  const [
-    syncError,
-    setSyncError,
-  ] = useState("");
-
-  const [
-    notificationStatus,
-    setNotificationStatus,
-  ] = useState("");
-
-  const todayEntry =
-    data[todayKey];
-
-  const streak =
-    calculateCurrentStreak(
-      data
-    );
-
-  const bestStreak =
-    calculateBestStreak(
-      data
-    );
-
-  const currentMonthStats =
-    getMonthStats(
-      data,
-      selectedMonth.getFullYear(),
-      selectedMonth.getMonth()
-    );
-
-  const nextMilestone =
-    milestones.find(
-      (milestone) =>
-        milestone.days >
-        streak
-    );
-
-  const unlockedCount =
-    milestones.filter(
-      (milestone) =>
-        bestStreak >=
-        milestone.days
-    ).length;
+  const unlockedCount = milestones.filter(
+    (milestone) => bestStreak >= milestone.days
+  ).length;
 
   useEffect(() => {
     loadEntries();
+  }, []);
+
+  useEffect(() => {
+    async function checkNotifications() {
+      try {
+        const enabled = await isPushEnabled();
+        setNotificationsEnabled(enabled);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    checkNotifications();
   }, []);
 
   async function loadEntries() {
     setLoading(true);
     setSyncError("");
 
-    const {
-      data: rows,
-      error,
-    } = await supabase
+    const { data: rows, error } = await supabase
       .from("daily_entries")
-      .select(
-        "entry_date, answer, message"
-      )
-      .order(
-        "entry_date",
-        {
-          ascending: true,
-        }
-      );
+      .select("entry_date, answer, message")
+      .order("entry_date", {
+        ascending: true,
+      });
 
     if (error) {
       console.error(error);
 
-      setSyncError(
-        "לא הצלחתי לטעון את הנתונים 🤍"
-      );
+      setSyncError("לא הצלחתי לטעון את הנתונים 🤍");
     } else {
-      setData(
-        rowsToData(
-          rows || []
-        )
-      );
+      setData(rowsToData(rows || []));
     }
 
     setLoading(false);
   }
 
-  function launchCelebrationEffects(
-    milestone
-  ) {
-    setCelebration(
-      milestone
-    );
+  function launchCelebrationEffects(milestone) {
+    setCelebration(milestone);
 
     confetti({
       particleCount: 110,
@@ -529,209 +351,131 @@ function App() {
     }, 450);
   }
 
-  async function checkMilestone(
-    newData
-  ) {
-    const newStreak =
-      calculateCurrentStreak(
-        newData
-      );
+  async function checkMilestone(newData) {
+    const newStreak = calculateCurrentStreak(newData);
 
-    const milestone =
-      milestones.find(
-        (item) =>
-          item.days ===
-          newStreak
-      );
+    const milestone = milestones.find(
+      (item) => item.days === newStreak
+    );
 
-    if (!milestone) {
-      return;
-    }
+    if (!milestone) return;
 
-    const streakStart =
-      getCurrentStreakStart(
-        newData
-      );
+    const streakStart = getCurrentStreakStart(newData);
 
-    if (!streakStart) {
-      return;
-    }
+    if (!streakStart) return;
 
     const {
       data: existing,
       error: lookupError,
     } = await supabase
-      .from(
-        "milestone_celebrations"
-      )
+      .from("milestone_celebrations")
       .select("id")
-      .eq(
-        "streak_start",
-        streakStart
-      )
-      .eq(
-        "milestone_days",
-        milestone.days
-      )
+      .eq("streak_start", streakStart)
+      .eq("milestone_days", milestone.days)
       .maybeSingle();
 
     if (lookupError) {
-      console.error(
-        lookupError
-      );
+      console.error(lookupError);
       return;
     }
 
-    if (existing) {
-      return;
-    }
+    if (existing) return;
 
-    const {
-      error: insertError,
-    } = await supabase
-      .from(
-        "milestone_celebrations"
-      )
+    const { error: insertError } = await supabase
+      .from("milestone_celebrations")
       .insert({
-        streak_start:
-          streakStart,
-        milestone_days:
-          milestone.days,
+        streak_start: streakStart,
+        milestone_days: milestone.days,
       });
 
     if (insertError) {
-      console.error(
-        insertError
-      );
-
+      console.error(insertError);
       return;
     }
 
-    launchCelebrationEffects(
-      milestone
+    launchCelebrationEffects(milestone);
+  }
+
+  async function upsertEntry(entryDate, value, selectedMessage) {
+    const { error } = await supabase
+      .from("daily_entries")
+      .upsert(
+        {
+          entry_date: entryDate,
+          answer: value,
+          message: selectedMessage,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "entry_date",
+        }
+      );
+
+    if (error) {
+      console.error(error);
+
+      setSyncError("לא הצלחתי לשמור. נסי שוב 🤍");
+      return false;
+    }
+
+    setSyncError("");
+
+    return true;
+  }
+
+  async function deleteEntry(entryDate) {
+    const { error } = await supabase
+      .from("daily_entries")
+      .delete()
+      .eq("entry_date", entryDate);
+
+    if (error) {
+      console.error(error);
+
+      setSyncError("לא הצלחתי למחוק. נסי שוב 🤍");
+      return false;
+    }
+
+    setSyncError("");
+
+    return true;
+  }
+
+  async function saveAnswer(value, selectedMessage) {
+    const success = await upsertEntry(
+      todayKey,
+      value,
+      selectedMessage
     );
-  }
 
-  async function upsertEntry(
-    entryDate,
-    value,
-    selectedMessage
-  ) {
-    const { error } =
-      await supabase
-        .from(
-          "daily_entries"
-        )
-        .upsert(
-          {
-            entry_date:
-              entryDate,
-            answer: value,
-            message:
-              selectedMessage,
-            updated_at:
-              new Date().toISOString(),
-          },
-          {
-            onConflict:
-              "entry_date",
-          }
-        );
-
-    if (error) {
-      console.error(error);
-
-      setSyncError(
-        "לא הצלחתי לשמור. נסי שוב 🤍"
-      );
-
-      return false;
-    }
-
-    setSyncError("");
-
-    return true;
-  }
-
-  async function deleteEntry(
-    entryDate
-  ) {
-    const { error } =
-      await supabase
-        .from(
-          "daily_entries"
-        )
-        .delete()
-        .eq(
-          "entry_date",
-          entryDate
-        );
-
-    if (error) {
-      console.error(error);
-
-      setSyncError(
-        "לא הצלחתי למחוק. נסי שוב 🤍"
-      );
-
-      return false;
-    }
-
-    setSyncError("");
-
-    return true;
-  }
-
-  async function saveAnswer(
-    value,
-    selectedMessage
-  ) {
-    const success =
-      await upsertEntry(
-        todayKey,
-        value,
-        selectedMessage
-      );
-
-    if (!success) {
-      return false;
-    }
+    if (!success) return false;
 
     const newData = {
       ...data,
       [todayKey]: {
         answer: value,
-        message:
-          selectedMessage,
+        message: selectedMessage,
       },
     };
 
     setData(newData);
 
     if (value === "yes") {
-      await checkMilestone(
-        newData
-      );
+      await checkMilestone(newData);
     }
 
     return true;
   }
 
   async function handleYes() {
-    const selectedMessage =
-      getRandomMessage(
-        successMessages
-      );
+    const selectedMessage = getRandomMessage(successMessages);
 
-    const success =
-      await saveAnswer(
-        "yes",
-        selectedMessage
-      );
+    const success = await saveAnswer(
+      "yes",
+      selectedMessage
+    );
 
-    if (!success) {
-      return;
-    }
+    if (!success) return;
 
     confetti({
       particleCount: 80,
@@ -743,10 +487,7 @@ function App() {
   }
 
   async function handleNo() {
-    const selectedMessage =
-      getRandomMessage(
-        supportMessages
-      );
+    const selectedMessage = getRandomMessage(supportMessages);
 
     await saveAnswer(
       "no",
@@ -755,14 +496,9 @@ function App() {
   }
 
   async function resetToday() {
-    const success =
-      await deleteEntry(
-        todayKey
-      );
+    const success = await deleteEntry(todayKey);
 
-    if (!success) {
-      return;
-    }
+    if (!success) return;
 
     const newData = {
       ...data,
@@ -773,32 +509,21 @@ function App() {
     setData(newData);
   }
 
-  async function updateCalendarDay(
-    value
-  ) {
-    if (!editingDate) {
-      return;
-    }
+  async function updateCalendarDay(value) {
+    if (!editingDate) return;
 
     const message =
       value === "yes"
-        ? getRandomMessage(
-            successMessages
-          )
-        : getRandomMessage(
-            supportMessages
-          );
+        ? getRandomMessage(successMessages)
+        : getRandomMessage(supportMessages);
 
-    const success =
-      await upsertEntry(
-        editingDate,
-        value,
-        message
-      );
+    const success = await upsertEntry(
+      editingDate,
+      value,
+      message
+    );
 
-    if (!success) {
-      return;
-    }
+    if (!success) return;
 
     const newData = {
       ...data,
@@ -809,54 +534,38 @@ function App() {
     };
 
     setData(newData);
-
     setEditingDate(null);
 
     if (value === "yes") {
-      await checkMilestone(
-        newData
-      );
+      await checkMilestone(newData);
     }
   }
 
   async function removeCalendarDay() {
-    if (!editingDate) {
-      return;
-    }
+    if (!editingDate) return;
 
-    const success =
-      await deleteEntry(
-        editingDate
-      );
+    const success = await deleteEntry(editingDate);
 
-    if (!success) {
-      return;
-    }
+    if (!success) return;
 
     const newData = {
       ...data,
     };
 
-    delete newData[
-      editingDate
-    ];
+    delete newData[editingDate];
 
     setData(newData);
-
     setEditingDate(null);
   }
 
   async function handleEnableNotifications() {
     try {
-      setNotificationStatus(
-        "מפעיל..."
-      );
+      setNotificationStatus("מפעיל...");
 
       await enablePushNotifications();
 
-      setNotificationStatus(
-        "התזכורת הופעלה ✓"
-      );
+      setNotificationsEnabled(true);
+      setNotificationStatus("");
     } catch (error) {
       console.error(error);
 
@@ -872,8 +581,7 @@ function App() {
       (current) =>
         new Date(
           current.getFullYear(),
-          current.getMonth() +
-            amount,
+          current.getMonth() + amount,
           1
         )
     );
@@ -883,8 +591,7 @@ function App() {
     setSelectedMonth(
       (current) =>
         new Date(
-          current.getFullYear() +
-            amount,
+          current.getFullYear() + amount,
           current.getMonth(),
           1
         )
@@ -892,104 +599,62 @@ function App() {
   }
 
   function buildCalendarDays() {
-    const year =
-      selectedMonth.getFullYear();
+    const year = selectedMonth.getFullYear();
+    const month = selectedMonth.getMonth();
 
-    const month =
-      selectedMonth.getMonth();
+    const firstDay = new Date(
+      year,
+      month,
+      1
+    ).getDay();
 
-    const firstDay =
-      new Date(
-        year,
-        month,
-        1
-      ).getDay();
-
-    const daysInMonth =
-      new Date(
-        year,
-        month + 1,
-        0
-      ).getDate();
+    const daysInMonth = new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
 
     const items = [];
 
-    for (
-      let i = 0;
-      i < firstDay;
-      i += 1
-    ) {
+    for (let i = 0; i < firstDay; i += 1) {
       items.push(
-        <div
-          key={`empty-${i}`}
-        />
+        <div key={`empty-${i}`} />
       );
     }
 
-    for (
-      let day = 1;
-      day <= daysInMonth;
-      day += 1
-    ) {
-      const date =
-        new Date(
-          year,
-          month,
-          day
-        );
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const date = new Date(year, month, day);
+      const key = getDateKey(date);
+      const entry = data[key];
+      const future = isFutureDate(date);
 
-      const key =
-        getDateKey(date);
+      let className = "day";
 
-      const entry =
-        data[key];
-
-      const future =
-        isFutureDate(date);
-
-      let className =
-        "day";
-
-      if (
-        entry?.answer ===
-        "yes"
-      ) {
-        className +=
-          " dayYes";
+      if (entry?.answer === "yes") {
+        className += " dayYes";
       }
 
-      if (
-        entry?.answer ===
-        "no"
-      ) {
-        className +=
-          " dayNo";
+      if (entry?.answer === "no") {
+        className += " dayNo";
       }
 
       if (future) {
-        className +=
-          " dayFuture";
+        className += " dayFuture";
       } else {
-        className +=
-          " dayClickable";
+        className += " dayClickable";
       }
 
       items.push(
         <button
           key={key}
-          className={
-            className
-          }
+          className={className}
           disabled={future}
           onClick={() =>
             !future &&
-            setEditingDate(
-              key
-            )
+            setEditingDate(key)
           }
         >
-          {entry?.answer ===
-          "no"
+          {entry?.answer === "no"
             ? "♡"
             : day}
         </button>
@@ -1017,28 +682,21 @@ function App() {
         {!todayEntry ? (
           <>
             <p className="subtitle">
-              עוד סימון קטן
-              בדרך למטרה שלך.
-              בלי לחץ, רק
-              עקביות 🤍
+              עוד סימון קטן בדרך למטרה שלך.
+              בלי לחץ, רק עקביות 🤍
             </p>
 
             <div className="buttons">
               <button
                 className="yes"
-                onClick={
-                  handleYes
-                }
+                onClick={handleYes}
               >
-                כן, עמדתי בזה
-                💚
+                כן, עמדתי בזה 💚
               </button>
 
               <button
                 className="no"
-                onClick={
-                  handleNo
-                }
+                onClick={handleNo}
               >
                 לא היום
               </button>
@@ -1048,22 +706,18 @@ function App() {
           <div className="result">
             <div
               className={`resultIcon ${
-                todayEntry.answer ===
-                "yes"
+                todayEntry.answer === "yes"
                   ? "resultYes"
                   : "resultNo"
               }`}
             >
-              {todayEntry.answer ===
-              "yes"
+              {todayEntry.answer === "yes"
                 ? "✓"
                 : "♡"}
             </div>
 
             <h2>
-              {
-                todayEntry.message
-              }
+              {todayEntry.message}
             </h2>
 
             <p>
@@ -1072,9 +726,7 @@ function App() {
 
             <button
               className="editButton"
-              onClick={
-                resetToday
-              }
+              onClick={resetToday}
             >
               שיניתי את דעתי
             </button>
@@ -1111,35 +763,34 @@ function App() {
           </div>
         </div>
 
-        <div className="notificationCard">
-          <div>
-            <strong>
-              תזכורת יומית 🔔
-            </strong>
+        {!notificationsEnabled && (
+          <div className="notificationCard">
+            <div>
+              <strong>
+                תזכורת יומית 🔔
+              </strong>
 
-            <span>
-              קבלי תזכורת
-              אם עוד לא
-              סימנת היום
-            </span>
-          </div>
+              <span>
+                קבלי תזכורת אם עוד לא
+                סימנת היום
+              </span>
+            </div>
 
-          <button
-            onClick={
-              handleEnableNotifications
-            }
-          >
-            הפעלת תזכורת
-          </button>
-
-          {notificationStatus && (
-            <small>
-              {
-                notificationStatus
+            <button
+              onClick={
+                handleEnableNotifications
               }
-            </small>
-          )}
-        </div>
+            >
+              הפעלת תזכורת
+            </button>
+
+            {notificationStatus && (
+              <small>
+                {notificationStatus}
+              </small>
+            )}
+          </div>
+        )}
       </main>
     );
   }
@@ -1150,20 +801,16 @@ function App() {
         <div className="monthCard">
           <div className="monthHeader">
             <button
-              onClick={() =>
-                changeMonth(1)
-              }
+              onClick={() => changeMonth(1)}
             >
               ‹
             </button>
 
             <div>
               <h2>
-                {
-                  monthNames[
-                    selectedMonth.getMonth()
-                  ]
-                }
+                {monthNames[
+                  selectedMonth.getMonth()
+                ]}
               </h2>
 
               <span>
@@ -1172,24 +819,18 @@ function App() {
             </div>
 
             <button
-              onClick={() =>
-                changeMonth(-1)
-              }
+              onClick={() => changeMonth(-1)}
             >
               ›
             </button>
           </div>
 
           <div className="weekDays">
-            {weekDays.map(
-              (day) => (
-                <span
-                  key={day}
-                >
-                  {day}
-                </span>
-              )
-            )}
+            {weekDays.map((day) => (
+              <span key={day}>
+                {day}
+              </span>
+            ))}
           </div>
 
           <div className="calendar">
@@ -1204,9 +845,7 @@ function App() {
             </span>
 
             <strong>
-              {
-                currentMonthStats.total
-              }
+              {currentMonthStats.total}
             </strong>
           </div>
 
@@ -1216,9 +855,7 @@ function App() {
             </span>
 
             <strong>
-              {
-                currentMonthStats.yes
-              }
+              {currentMonthStats.yes}
             </strong>
           </div>
 
@@ -1228,9 +865,7 @@ function App() {
             </span>
 
             <strong>
-              {
-                currentMonthStats.no
-              }
+              {currentMonthStats.no}
             </strong>
           </div>
 
@@ -1240,10 +875,7 @@ function App() {
             </span>
 
             <strong>
-              {
-                currentMonthStats.percentage
-              }
-              %
+              {currentMonthStats.percentage}%
             </strong>
           </div>
         </div>
@@ -1252,16 +884,13 @@ function App() {
   }
 
   function renderYear() {
-    const year =
-      selectedMonth.getFullYear();
+    const year = selectedMonth.getFullYear();
 
     return (
       <>
         <div className="yearHeader">
           <button
-            onClick={() =>
-              changeYear(1)
-            }
+            onClick={() => changeYear(1)}
           >
             ‹
           </button>
@@ -1269,9 +898,7 @@ function App() {
           <h2>{year}</h2>
 
           <button
-            onClick={() =>
-              changeYear(-1)
-            }
+            onClick={() => changeYear(-1)}
           >
             ›
           </button>
@@ -1279,22 +906,16 @@ function App() {
 
         <div className="yearGrid">
           {monthNames.map(
-            (
-              monthName,
-              monthIndex
-            ) => {
-              const stats =
-                getMonthStats(
-                  data,
-                  year,
-                  monthIndex
-                );
+            (monthName, monthIndex) => {
+              const stats = getMonthStats(
+                data,
+                year,
+                monthIndex
+              );
 
               return (
                 <button
-                  key={
-                    monthName
-                  }
+                  key={monthName}
                   className="yearMonthCard"
                   onClick={() => {
                     setSelectedMonth(
@@ -1312,32 +933,21 @@ function App() {
                 >
                   <div className="yearMonthTop">
                     <span>
-                      {
-                        monthName
-                      }
+                      {monthName}
                     </span>
 
                     <strong>
-                      {
-                        stats.percentage
-                      }
-                      %
+                      {stats.percentage}%
                     </strong>
                   </div>
 
                   <div className="yearMonthBottom">
                     <span>
-                      {
-                        stats.yes
-                      }{" "}
-                      הצלחות
+                      {stats.yes} הצלחות
                     </span>
 
                     <span>
-                      {
-                        stats.total
-                      }{" "}
-                      ימים
+                      {stats.total} ימים
                     </span>
                   </div>
 
@@ -1373,48 +983,40 @@ function App() {
           </div>
 
           <div className="achievementCount">
-            {unlockedCount}/
-            {milestones.length}
+            {unlockedCount}/{milestones.length}
           </div>
         </div>
 
         <div className="achievementRow">
-          {milestones.map(
-            (milestone) => {
-              const unlocked =
-                bestStreak >=
-                milestone.days;
+          {milestones.map((milestone) => {
+            const unlocked =
+              bestStreak >= milestone.days;
 
-              return (
-                <div
-                  key={
-                    milestone.days
-                  }
-                  className={`achievement ${
-                    unlocked
-                      ? "achievementUnlocked"
-                      : "achievementLocked"
-                  }`}
-                >
-                  <div className="achievementBubble">
-                    {unlocked
-                      ? milestone.emoji
-                      : "🔒"}
-                  </div>
-
-                  <strong>
-                    {
-                      milestone.days
-                    }
-                  </strong>
-
-                  <span>
-                    ימים
-                  </span>
+            return (
+              <div
+                key={milestone.days}
+                className={`achievement ${
+                  unlocked
+                    ? "achievementUnlocked"
+                    : "achievementLocked"
+                }`}
+              >
+                <div className="achievementBubble">
+                  {unlocked
+                    ? milestone.emoji
+                    : "🔒"}
                 </div>
-              );
-            }
-          )}
+
+                <strong>
+                  {milestone.days}
+                </strong>
+
+                <span>
+                  ימים
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         {nextMilestone ? (
@@ -1425,11 +1027,7 @@ function App() {
               </span>
 
               <strong>
-                {streak}/
-                {
-                  nextMilestone.days
-                }{" "}
-                ימים
+                {streak}/{nextMilestone.days} ימים
               </strong>
             </div>
 
@@ -1448,8 +1046,7 @@ function App() {
           </div>
         ) : (
           <div className="allUnlocked">
-            פתחת את כל
-            ההישגים 👑
+            פתחת את כל ההישגים 👑
           </div>
         )}
       </div>
@@ -1510,15 +1107,12 @@ function App() {
         <div className="viewSwitch">
           <button
             className={
-              progressView ===
-              "month"
+              progressView === "month"
                 ? "viewActive"
                 : ""
             }
             onClick={() =>
-              setProgressView(
-                "month"
-              )
+              setProgressView("month")
             }
           >
             חודש
@@ -1526,23 +1120,19 @@ function App() {
 
           <button
             className={
-              progressView ===
-              "year"
+              progressView === "year"
                 ? "viewActive"
                 : ""
             }
             onClick={() =>
-              setProgressView(
-                "year"
-              )
+              setProgressView("year")
             }
           >
             שנה
           </button>
         </div>
 
-        {progressView ===
-        "month"
+        {progressView === "month"
           ? renderMonth()
           : renderYear()}
 
@@ -1572,13 +1162,10 @@ function App() {
     return (
       <div className="app">
         <div className="loadingScreen">
-          <div>
-            ♡
-          </div>
+          <div>♡</div>
 
           <p>
-            טוען את המסע
-            שלך… 🤍
+            טוען את המסע שלך… 🤍
           </p>
         </div>
       </div>
@@ -1615,15 +1202,12 @@ function App() {
 
           <button
             className={
-              screen ===
-              "progress"
+              screen === "progress"
                 ? "activeNav"
                 : ""
             }
             onClick={() =>
-              setScreen(
-                "progress"
-              )
+              setScreen("progress")
             }
           >
             <span>◷</span>
@@ -1636,9 +1220,7 @@ function App() {
         <div
           className="dayEditorBackdrop"
           onClick={() =>
-            setEditingDate(
-              null
-            )
+            setEditingDate(null)
           }
         >
           <div
@@ -1650,9 +1232,7 @@ function App() {
             <button
               className="dayEditorClose"
               onClick={() =>
-                setEditingDate(
-                  null
-                )
+                setEditingDate(null)
               }
             >
               ×
@@ -1675,24 +1255,16 @@ function App() {
               )}
             </h2>
 
-            {data[
-              editingDate
-            ] && (
+            {data[editingDate] && (
               <div
                 className={`dayEditorCurrent ${
-                  data[
-                    editingDate
-                  ].answer ===
-                  "yes"
+                  data[editingDate].answer === "yes"
                     ? "dayEditorCurrentYes"
                     : "dayEditorCurrentNo"
                 }`}
               >
                 כרגע מסומן:{" "}
-                {data[
-                  editingDate
-                ].answer ===
-                "yes"
+                {data[editingDate].answer === "yes"
                   ? "עמדתי במטרה ✓"
                   : "לא היום ♡"}
               </div>
@@ -1702,9 +1274,7 @@ function App() {
               <button
                 className="dayEditorYes"
                 onClick={() =>
-                  updateCalendarDay(
-                    "yes"
-                  )
+                  updateCalendarDay("yes")
                 }
               >
                 עמדתי בזה ✓
@@ -1713,23 +1283,17 @@ function App() {
               <button
                 className="dayEditorNo"
                 onClick={() =>
-                  updateCalendarDay(
-                    "no"
-                  )
+                  updateCalendarDay("no")
                 }
               >
                 לא היום ♡
               </button>
             </div>
 
-            {data[
-              editingDate
-            ] && (
+            {data[editingDate] && (
               <button
                 className="dayEditorDelete"
-                onClick={
-                  removeCalendarDay
-                }
+                onClick={removeCalendarDay}
               >
                 מחיקת הסימון
               </button>
@@ -1762,9 +1326,7 @@ function App() {
 
           <div className="milestoneContent">
             <div className="milestoneEmoji">
-              {
-                celebration.emoji
-              }
+              {celebration.emoji}
             </div>
 
             <div className="milestoneLabel">
@@ -1772,9 +1334,7 @@ function App() {
             </div>
 
             <div className="milestoneNumber">
-              {
-                celebration.days
-              }
+              {celebration.days}
             </div>
 
             <div className="milestoneDays">
@@ -1782,15 +1342,11 @@ function App() {
             </div>
 
             <h2>
-              {
-                celebration.title
-              }
+              {celebration.title}
             </h2>
 
             <p>
-              {
-                celebration.message
-              }
+              {celebration.message}
             </p>
 
             <div className="signature">
@@ -1800,9 +1356,7 @@ function App() {
             <button
               className="celebrationButton"
               onClick={() =>
-                setCelebration(
-                  null
-                )
+                setCelebration(null)
               }
             >
               ממשיכים 💚

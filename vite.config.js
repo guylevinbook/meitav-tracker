@@ -10,44 +10,49 @@ export default defineConfig({
       registerType: "autoUpdate",
 
       includeAssets: [
-        "favicon.ico",
         "apple-touch-icon.png",
       ],
 
-     manifest: {
-  name: "מעקב חיטוב",
-  short_name: "חיטוב",
+      workbox: {
+        importScripts: [
+          "/push-sw.js",
+        ],
+      },
 
-  description:
-    "מעקב חיטוב יומי ❤️",
+      manifest: {
+        name: "מעקב חיטוב",
+        short_name: "חיטוב",
+        description: "מעקב חיטוב יומי ❤️",
 
-  theme_color: "#f4fbfa",
-  background_color: "#f4fbfa",
+        theme_color: "#f4fbfa",
+        background_color: "#f4fbfa",
 
-  display: "standalone",
-  start_url: "/",
-  scope: "/",
-  orientation: "portrait",
+        display: "standalone",
 
-  icons: [
-    {
-      src: "/pwa-192x192.png",
-      sizes: "192x192",
-      type: "image/png",
-    },
-    {
-      src: "/pwa-512x512.png",
-      sizes: "512x512",
-      type: "image/png",
-    },
-    {
-      src: "/pwa-512x512.png",
-      sizes: "512x512",
-      type: "image/png",
-      purpose: "maskable",
-    },
-  ],
-},
+        start_url: "/",
+        scope: "/",
+
+        orientation: "portrait",
+
+        icons: [
+          {
+            src: "/pwa-192x192.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/pwa-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+          {
+            src: "/pwa-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      },
     }),
   ],
 });
