@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import confetti from "canvas-confetti";
 import { supabase } from "./lib/supabase";
+import { enablePushNotifications } from "./lib/push";
 import "./App.css";
 
 const successMessages = [
@@ -38,21 +39,24 @@ const milestones = [
     days: 30,
     emoji: "🏆",
     title: "חודש שלם!",
-    message: "30 ימים ברצף. זה כבר לא רק להתחיל — זה באמת להתמיד.",
+    message:
+      "30 ימים ברצף. זה כבר לא רק להתחיל — זה באמת להתמיד.",
     level: "monthMilestone",
   },
   {
     days: 60,
     emoji: "💎",
     title: "חודשיים!",
-    message: "60 ימים. תעצרי שנייה ותביני כמה רחוק כבר הגעת.",
+    message:
+      "60 ימים. תעצרי שנייה ותביני כמה רחוק כבר הגעת.",
     level: "twoMonths",
   },
   {
     days: 90,
     emoji: "👑",
     title: "90 ימים!",
-    message: "90 ימים ברצף. את פסיכית, ואני גאה בך ברמות ❤️",
+    message:
+      "90 ימים ברצף. את פסיכית, ואני גאה בך ברמות ❤️",
     level: "legendMilestone",
   },
 ];
@@ -72,110 +76,184 @@ const monthNames = [
   "דצמבר",
 ];
 
-const weekDays = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+const weekDays = [
+  "א",
+  "ב",
+  "ג",
+  "ד",
+  "ה",
+  "ו",
+  "ש",
+];
 
-function getDateKey(date = new Date()) {
+function getDateKey(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
+function dateFromKey(key) {
+  const [year, month, day] =
+    key.split("-").map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  );
+}
+
 function getRandomMessage(messages) {
-  return messages[Math.floor(Math.random() * messages.length)];
+  return messages[
+    Math.floor(
+      Math.random() *
+        messages.length
+    )
+  ];
 }
 
-function rowsToData(rows = []) {
-  const result = {};
-
-  rows.forEach((row) => {
-    result[row.entry_date] = {
-      answer: row.answer,
-      message: row.message || "",
-    };
-  });
-
-  return result;
+function rowsToData(rows) {
+  return Object.fromEntries(
+    rows.map((row) => [
+      row.entry_date,
+      {
+        answer: row.answer,
+        message: row.message,
+      },
+    ])
+  );
 }
 
-function getMonthStats(data, year, month) {
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+function isFutureDate(date) {
+  const today = new Date();
 
-  let yesCount = 0;
-  let noCount = 0;
+  today.setHours(
+    0,
+    0,
+    0,
+    0
+  );
 
-  for (let day = 1; day <= daysInMonth; day++) {
-    const key = getDateKey(new Date(year, month, day));
-    const answer = data[key]?.answer;
+  const check = new Date(date);
 
-    if (answer === "yes") yesCount++;
-    if (answer === "no") noCount++;
-  }
+  check.setHours(
+    0,
+    0,
+    0,
+    0
+  );
 
-  const answeredCount = yesCount + noCount;
-
-  const successRate =
-    answeredCount === 0
-      ? 0
-      : Math.round((yesCount / answeredCount) * 100);
-
-  return {
-    yesCount,
-    noCount,
-    answeredCount,
-    successRate,
-  };
+  return check > today;
 }
 
 function calculateCurrentStreak(data) {
-  let count = 0;
-
   const today = new Date();
-  const todayKey = getDateKey(today);
-  const todayAnswer = data[todayKey]?.answer;
 
-  const date = new Date(today);
+  today.setHours(
+    0,
+    0,
+    0,
+    0
+  );
 
-  if (!todayAnswer) {
-    date.setDate(date.getDate() - 1);
+  const todayKey =
+    getDateKey(today);
+
+  if (
+    data[todayKey]?.answer ===
+    "no"
+  ) {
+    return 0;
   }
+
+  let cursor =
+    new Date(today);
+
+  if (
+    !data[todayKey]
+  ) {
+    cursor.setDate(
+      cursor.getDate() - 1
+    );
+  }
+
+  let streak = 0;
 
   while (true) {
-    const key = getDateKey(date);
+    const key =
+      getDateKey(cursor);
 
-    if (data[key]?.answer === "yes") {
-      count++;
-      date.setDate(date.getDate() - 1);
-    } else {
+    if (
+      data[key]?.answer !==
+      "yes"
+    ) {
       break;
     }
+
+    streak += 1;
+
+    cursor.setDate(
+      cursor.getDate() - 1
+    );
   }
 
-  return count;
+  return streak;
 }
 
 function calculateBestStreak(data) {
-  const yesDates = Object.keys(data)
-    .filter((key) => data[key]?.answer === "yes")
-    .sort();
+  const yesDates =
+    Object.entries(data)
+      .filter(
+        ([, value]) =>
+          value.answer === "yes"
+      )
+      .map(([key]) =>
+        dateFromKey(key)
+      )
+      .sort(
+        (a, b) =>
+          a.getTime() -
+          b.getTime()
+      );
 
-  if (yesDates.length === 0) return 0;
+  if (!yesDates.length) {
+    return 0;
+  }
 
   let best = 1;
   let current = 1;
 
-  for (let i = 1; i < yesDates.length; i++) {
-    const previous = new Date(`${yesDates[i - 1]}T12:00:00`);
-    const currentDate = new Date(`${yesDates[i]}T12:00:00`);
+  for (
+    let i = 1;
+    i < yesDates.length;
+    i += 1
+  ) {
+    const previous =
+      new Date(
+        yesDates[i - 1]
+      );
 
-    const difference = Math.round(
-      (currentDate - previous) / 86400000
+    previous.setDate(
+      previous.getDate() + 1
     );
 
-    if (difference === 1) {
-      current++;
-      best = Math.max(best, current);
+    if (
+      getDateKey(previous) ===
+      getDateKey(
+        yesDates[i]
+      )
+    ) {
+      current += 1;
+      best = Math.max(
+        best,
+        current
+      );
     } else {
       current = 1;
     }
@@ -184,65 +262,194 @@ function calculateBestStreak(data) {
   return best;
 }
 
-function getCurrentStreakStart(data) {
-  const today = new Date();
-  const todayKey = getDateKey(today);
+function getCurrentStreakStart(
+  data
+) {
+  const today =
+    new Date();
 
-  if (data[todayKey]?.answer !== "yes") {
+  const todayKey =
+    getDateKey(today);
+
+  if (
+    data[todayKey]?.answer !==
+    "yes"
+  ) {
     return null;
   }
 
-  const date = new Date(today);
+  let cursor =
+    new Date(today);
 
   while (true) {
-    const previous = new Date(date);
-    previous.setDate(previous.getDate() - 1);
+    const previous =
+      new Date(cursor);
 
-    const previousKey = getDateKey(previous);
+    previous.setDate(
+      previous.getDate() - 1
+    );
 
-    if (data[previousKey]?.answer === "yes") {
-      date.setDate(date.getDate() - 1);
-    } else {
+    const previousKey =
+      getDateKey(previous);
+
+    if (
+      data[previousKey]
+        ?.answer !== "yes"
+    ) {
       break;
     }
+
+    cursor = previous;
   }
 
-  return getDateKey(date);
+  return getDateKey(cursor);
 }
 
-function isFutureDate(date) {
-  const compareDate = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
+function getMonthStats(
+  data,
+  year,
+  month
+) {
+  let yes = 0;
+  let no = 0;
+
+  Object.entries(data).forEach(
+    ([key, entry]) => {
+      const date =
+        dateFromKey(key);
+
+      if (
+        date.getFullYear() !==
+          year ||
+        date.getMonth() !==
+          month
+      ) {
+        return;
+      }
+
+      if (
+        entry.answer === "yes"
+      ) {
+        yes += 1;
+      }
+
+      if (
+        entry.answer === "no"
+      ) {
+        no += 1;
+      }
+    }
   );
 
-  const today = new Date();
+  const total = yes + no;
 
-  const compareToday = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-
-  return compareDate > compareToday;
+  return {
+    yes,
+    no,
+    total,
+    percentage:
+      total > 0
+        ? Math.round(
+            (yes / total) *
+              100
+          )
+        : 0,
+  };
 }
 
 function App() {
-  const [screen, setScreen] = useState("today");
-  const [progressView, setProgressView] = useState("month");
+  const today = useMemo(
+    () => new Date(),
+    []
+  );
 
-  const [answer, setAnswer] = useState(null);
-  const [message, setMessage] = useState("");
+  const todayKey =
+    getDateKey(today);
 
-  const [data, setData] = useState({});
-  const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [
+    screen,
+    setScreen,
+  ] = useState("today");
 
-  const [celebration, setCelebration] = useState(null);
-  const [editingDate, setEditingDate] = useState(null);
+  const [
+    progressView,
+    setProgressView,
+  ] = useState("month");
 
-  const [loading, setLoading] = useState(true);
-  const [syncError, setSyncError] = useState("");
+  const [
+    data,
+    setData,
+  ] = useState({});
+
+  const [
+    selectedMonth,
+    setSelectedMonth,
+  ] = useState(
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1
+    )
+  );
+
+  const [
+    celebration,
+    setCelebration,
+  ] = useState(null);
+
+  const [
+    editingDate,
+    setEditingDate,
+  ] = useState(null);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    syncError,
+    setSyncError,
+  ] = useState("");
+
+  const [
+    notificationStatus,
+    setNotificationStatus,
+  ] = useState("");
+
+  const todayEntry =
+    data[todayKey];
+
+  const streak =
+    calculateCurrentStreak(
+      data
+    );
+
+  const bestStreak =
+    calculateBestStreak(
+      data
+    );
+
+  const currentMonthStats =
+    getMonthStats(
+      data,
+      selectedMonth.getFullYear(),
+      selectedMonth.getMonth()
+    );
+
+  const nextMilestone =
+    milestones.find(
+      (milestone) =>
+        milestone.days >
+        streak
+    );
+
+  const unlockedCount =
+    milestones.filter(
+      (milestone) =>
+        bestStreak >=
+        milestone.days
+    ).length;
 
   useEffect(() => {
     loadEntries();
@@ -252,256 +459,310 @@ function App() {
     setLoading(true);
     setSyncError("");
 
-    const { data: rows, error } = await supabase
-      .from("daily_entries")
-      .select("entry_date, answer, message")
-      .order("entry_date", {
-        ascending: true,
-      });
-
-    if (error) {
-      console.error(error);
-      setSyncError("לא הצלחתי לטעון את הנתונים");
-      setLoading(false);
-      return;
-    }
-
-    const loadedData = rowsToData(rows);
-
-    setData(loadedData);
-
-    const todayKey = getDateKey();
-    const todayEntry = loadedData[todayKey];
-
-    if (todayEntry) {
-      setAnswer(todayEntry.answer);
-      setMessage(todayEntry.message);
-    } else {
-      setAnswer(null);
-      setMessage("");
-    }
-
-    setLoading(false);
-  }
-
-  const launchCelebrationEffects = (milestone) => {
-    setCelebration(milestone);
-
-    setTimeout(() => {
-      confetti({
-        particleCount: milestone.days >= 30 ? 320 : 220,
-        spread: milestone.days >= 30 ? 155 : 110,
-        startVelocity: 46,
-        origin: { y: 0.62 },
-      });
-    }, 180);
-
-    setTimeout(() => {
-      confetti({
-        particleCount: milestone.days >= 60 ? 220 : 150,
-        angle: 60,
-        spread: 90,
-        origin: { x: 0, y: 0.65 },
-      });
-
-      confetti({
-        particleCount: milestone.days >= 60 ? 220 : 150,
-        angle: 120,
-        spread: 90,
-        origin: { x: 1, y: 0.65 },
-      });
-    }, 650);
-
-    if (milestone.days >= 30) {
-      setTimeout(() => {
-        confetti({
-          particleCount: 180,
-          spread: 170,
-          startVelocity: 35,
-          origin: { y: 0.25 },
-        });
-      }, 1150);
-    }
-  };
-
-  const checkMilestone = async (newData) => {
-    const newStreak = calculateCurrentStreak(newData);
-
-    const milestone = milestones.find(
-      (item) => item.days === newStreak
-    );
-
-    if (!milestone) return;
-
-    const streakStart = getCurrentStreakStart(newData);
-
-    if (!streakStart) return;
-
     const {
-      data: existingCelebration,
-      error: checkError,
+      data: rows,
+      error,
     } = await supabase
-      .from("milestone_celebrations")
-      .select("id")
-      .eq("streak_start", streakStart)
-      .eq("milestone_days", milestone.days)
-      .maybeSingle();
-
-    if (checkError) {
-      console.error(
-        "Milestone check failed:",
-        checkError
-      );
-      return;
-    }
-
-    if (existingCelebration) {
-      return;
-    }
-
-    const { error: insertError } =
-      await supabase
-        .from("milestone_celebrations")
-        .insert({
-          streak_start: streakStart,
-          milestone_days: milestone.days,
-        });
-
-    if (insertError) {
-      console.error(
-        "Milestone save failed:",
-        insertError
-      );
-      return;
-    }
-
-    launchCelebrationEffects(milestone);
-  };
-
-  const updateLocalState = (newData) => {
-    setData(newData);
-
-    const todayKey = getDateKey();
-    const todayEntry = newData[todayKey];
-
-    if (todayEntry) {
-      setAnswer(todayEntry.answer);
-      setMessage(todayEntry.message || "");
-    } else {
-      setAnswer(null);
-      setMessage("");
-    }
-  };
-
-  const upsertEntry = async (
-    entryDate,
-    value,
-    selectedMessage
-  ) => {
-    setSyncError("");
-
-    const { error } = await supabase
       .from("daily_entries")
-      .upsert(
+      .select(
+        "entry_date, answer, message"
+      )
+      .order(
+        "entry_date",
         {
-          entry_date: entryDate,
-          answer: value,
-          message: selectedMessage,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "entry_date",
+          ascending: true,
         }
       );
 
     if (error) {
       console.error(error);
-      setSyncError("השמירה נכשלה. נסי שוב.");
-      return false;
+
+      setSyncError(
+        "לא הצלחתי לטעון את הנתונים 🤍"
+      );
+    } else {
+      setData(
+        rowsToData(
+          rows || []
+        )
+      );
     }
 
-    return true;
-  };
+    setLoading(false);
+  }
 
-  const deleteEntry = async (entryDate) => {
-    setSyncError("");
+  function launchCelebrationEffects(
+    milestone
+  ) {
+    setCelebration(
+      milestone
+    );
 
-    const { error } = await supabase
-      .from("daily_entries")
-      .delete()
-      .eq("entry_date", entryDate);
+    confetti({
+      particleCount: 110,
+      spread: 85,
+      origin: {
+        y: 0.65,
+      },
+    });
+
+    setTimeout(() => {
+      confetti({
+        particleCount: 80,
+        angle: 60,
+        spread: 60,
+        origin: {
+          x: 0,
+          y: 0.65,
+        },
+      });
+
+      confetti({
+        particleCount: 80,
+        angle: 120,
+        spread: 60,
+        origin: {
+          x: 1,
+          y: 0.65,
+        },
+      });
+    }, 450);
+  }
+
+  async function checkMilestone(
+    newData
+  ) {
+    const newStreak =
+      calculateCurrentStreak(
+        newData
+      );
+
+    const milestone =
+      milestones.find(
+        (item) =>
+          item.days ===
+          newStreak
+      );
+
+    if (!milestone) {
+      return;
+    }
+
+    const streakStart =
+      getCurrentStreakStart(
+        newData
+      );
+
+    if (!streakStart) {
+      return;
+    }
+
+    const {
+      data: existing,
+      error: lookupError,
+    } = await supabase
+      .from(
+        "milestone_celebrations"
+      )
+      .select("id")
+      .eq(
+        "streak_start",
+        streakStart
+      )
+      .eq(
+        "milestone_days",
+        milestone.days
+      )
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error(
+        lookupError
+      );
+      return;
+    }
+
+    if (existing) {
+      return;
+    }
+
+    const {
+      error: insertError,
+    } = await supabase
+      .from(
+        "milestone_celebrations"
+      )
+      .insert({
+        streak_start:
+          streakStart,
+        milestone_days:
+          milestone.days,
+      });
+
+    if (insertError) {
+      console.error(
+        insertError
+      );
+
+      return;
+    }
+
+    launchCelebrationEffects(
+      milestone
+    );
+  }
+
+  async function upsertEntry(
+    entryDate,
+    value,
+    selectedMessage
+  ) {
+    const { error } =
+      await supabase
+        .from(
+          "daily_entries"
+        )
+        .upsert(
+          {
+            entry_date:
+              entryDate,
+            answer: value,
+            message:
+              selectedMessage,
+            updated_at:
+              new Date().toISOString(),
+          },
+          {
+            onConflict:
+              "entry_date",
+          }
+        );
 
     if (error) {
       console.error(error);
-      setSyncError("המחיקה נכשלה. נסי שוב.");
+
+      setSyncError(
+        "לא הצלחתי לשמור. נסי שוב 🤍"
+      );
+
       return false;
     }
 
-    return true;
-  };
+    setSyncError("");
 
-  const saveAnswer = async (
+    return true;
+  }
+
+  async function deleteEntry(
+    entryDate
+  ) {
+    const { error } =
+      await supabase
+        .from(
+          "daily_entries"
+        )
+        .delete()
+        .eq(
+          "entry_date",
+          entryDate
+        );
+
+    if (error) {
+      console.error(error);
+
+      setSyncError(
+        "לא הצלחתי למחוק. נסי שוב 🤍"
+      );
+
+      return false;
+    }
+
+    setSyncError("");
+
+    return true;
+  }
+
+  async function saveAnswer(
     value,
     selectedMessage
-  ) => {
-    const todayKey = getDateKey();
+  ) {
+    const success =
+      await upsertEntry(
+        todayKey,
+        value,
+        selectedMessage
+      );
 
-    const success = await upsertEntry(
-      todayKey,
-      value,
-      selectedMessage
-    );
-
-    if (!success) return;
+    if (!success) {
+      return false;
+    }
 
     const newData = {
       ...data,
       [todayKey]: {
         answer: value,
-        message: selectedMessage,
+        message:
+          selectedMessage,
       },
     };
 
-    updateLocalState(newData);
+    setData(newData);
 
     if (value === "yes") {
-      await checkMilestone(newData);
+      await checkMilestone(
+        newData
+      );
     }
-  };
 
-  const handleYes = async () => {
+    return true;
+  }
+
+  async function handleYes() {
     const selectedMessage =
-      getRandomMessage(successMessages);
+      getRandomMessage(
+        successMessages
+      );
 
-    await saveAnswer(
-      "yes",
-      selectedMessage
-    );
+    const success =
+      await saveAnswer(
+        "yes",
+        selectedMessage
+      );
+
+    if (!success) {
+      return;
+    }
 
     confetti({
-      particleCount: 140,
-      spread: 85,
-      origin: { y: 0.65 },
+      particleCount: 80,
+      spread: 65,
+      origin: {
+        y: 0.72,
+      },
     });
-  };
+  }
 
-  const handleNo = async () => {
+  async function handleNo() {
     const selectedMessage =
-      getRandomMessage(supportMessages);
+      getRandomMessage(
+        supportMessages
+      );
 
     await saveAnswer(
       "no",
       selectedMessage
     );
-  };
+  }
 
-  const resetToday = async () => {
-    const todayKey = getDateKey();
-
+  async function resetToday() {
     const success =
-      await deleteEntry(todayKey);
+      await deleteEntry(
+        todayKey
+      );
 
-    if (!success) return;
+    if (!success) {
+      return;
+    }
 
     const newData = {
       ...data,
@@ -509,67 +770,133 @@ function App() {
 
     delete newData[todayKey];
 
-    updateLocalState(newData);
-  };
+    setData(newData);
+  }
 
-  const updateCalendarDay = async (value) => {
-    if (!editingDate) return;
+  async function updateCalendarDay(
+    value
+  ) {
+    if (!editingDate) {
+      return;
+    }
 
-    const key = getDateKey(editingDate);
+    const message =
+      value === "yes"
+        ? getRandomMessage(
+            successMessages
+          )
+        : getRandomMessage(
+            supportMessages
+          );
+
+    const success =
+      await upsertEntry(
+        editingDate,
+        value,
+        message
+      );
+
+    if (!success) {
+      return;
+    }
+
+    const newData = {
+      ...data,
+      [editingDate]: {
+        answer: value,
+        message,
+      },
+    };
+
+    setData(newData);
+
+    setEditingDate(null);
+
+    if (value === "yes") {
+      await checkMilestone(
+        newData
+      );
+    }
+  }
+
+  async function removeCalendarDay() {
+    if (!editingDate) {
+      return;
+    }
+
+    const success =
+      await deleteEntry(
+        editingDate
+      );
+
+    if (!success) {
+      return;
+    }
 
     const newData = {
       ...data,
     };
 
-    if (value === null) {
-      const success =
-        await deleteEntry(key);
+    delete newData[
+      editingDate
+    ];
 
-      if (!success) return;
+    setData(newData);
 
-      delete newData[key];
-    } else {
-      const selectedMessage =
-        value === "yes"
-          ? getRandomMessage(successMessages)
-          : getRandomMessage(supportMessages);
-
-      const success =
-        await upsertEntry(
-          key,
-          value,
-          selectedMessage
-        );
-
-      if (!success) return;
-
-      newData[key] = {
-        answer: value,
-        message: selectedMessage,
-      };
-    }
-
-    updateLocalState(newData);
     setEditingDate(null);
+  }
 
-    if (value === "yes") {
-      await checkMilestone(newData);
+  async function handleEnableNotifications() {
+    try {
+      setNotificationStatus(
+        "מפעיל..."
+      );
+
+      await enablePushNotifications();
+
+      setNotificationStatus(
+        "התזכורת הופעלה ✓"
+      );
+    } catch (error) {
+      console.error(error);
+
+      setNotificationStatus(
+        error?.message ||
+          "לא הצלחתי להפעיל התראות"
+      );
     }
-  };
+  }
 
-  const monthInfo = useMemo(() => {
+  function changeMonth(amount) {
+    setSelectedMonth(
+      (current) =>
+        new Date(
+          current.getFullYear(),
+          current.getMonth() +
+            amount,
+          1
+        )
+    );
+  }
+
+  function changeYear(amount) {
+    setSelectedMonth(
+      (current) =>
+        new Date(
+          current.getFullYear() +
+            amount,
+          current.getMonth(),
+          1
+        )
+    );
+  }
+
+  function buildCalendarDays() {
     const year =
       selectedMonth.getFullYear();
 
     const month =
       selectedMonth.getMonth();
-
-    const daysInMonth =
-      new Date(
-        year,
-        month + 1,
-        0
-      ).getDate();
 
     const firstDay =
       new Date(
@@ -578,16 +905,31 @@ function App() {
         1
       ).getDay();
 
-    const days = [];
+    const daysInMonth =
+      new Date(
+        year,
+        month + 1,
+        0
+      ).getDate();
 
-    for (let i = 0; i < firstDay; i++) {
-      days.push(null);
+    const items = [];
+
+    for (
+      let i = 0;
+      i < firstDay;
+      i += 1
+    ) {
+      items.push(
+        <div
+          key={`empty-${i}`}
+        />
+      );
     }
 
     for (
       let day = 1;
       day <= daysInMonth;
-      day++
+      day += 1
     ) {
       const date =
         new Date(
@@ -599,820 +941,661 @@ function App() {
       const key =
         getDateKey(date);
 
-      days.push({
-        day,
-        key,
-        date,
-        status:
-          data[key]?.answer ||
-          null,
-        future:
-          isFutureDate(date),
-      });
+      const entry =
+        data[key];
+
+      const future =
+        isFutureDate(date);
+
+      let className =
+        "day";
+
+      if (
+        entry?.answer ===
+        "yes"
+      ) {
+        className +=
+          " dayYes";
+      }
+
+      if (
+        entry?.answer ===
+        "no"
+      ) {
+        className +=
+          " dayNo";
+      }
+
+      if (future) {
+        className +=
+          " dayFuture";
+      } else {
+        className +=
+          " dayClickable";
+      }
+
+      items.push(
+        <button
+          key={key}
+          className={
+            className
+          }
+          disabled={future}
+          onClick={() =>
+            !future &&
+            setEditingDate(
+              key
+            )
+          }
+        >
+          {entry?.answer ===
+          "no"
+            ? "♡"
+            : day}
+        </button>
+      );
     }
 
-    const stats =
-      getMonthStats(
-        data,
-        year,
-        month
-      );
+    return items;
+  }
 
-    return {
-      year,
-      month,
-      days,
-      ...stats,
-    };
-  }, [selectedMonth, data]);
-
-  const yearStats = useMemo(() => {
-    const year =
-      selectedMonth.getFullYear();
-
-    return monthNames.map(
-      (name, month) => ({
-        name,
-        month,
-        ...getMonthStats(
-          data,
-          year,
-          month
-        ),
-      })
-    );
-  }, [data, selectedMonth]);
-
-  const streak = useMemo(
-    () =>
-      calculateCurrentStreak(data),
-    [data]
-  );
-
-  const bestStreak = useMemo(
-    () =>
-      calculateBestStreak(data),
-    [data]
-  );
-
-  const totalWins = useMemo(() => {
-    return Object.values(data)
-      .filter(
-        (entry) =>
-          entry?.answer === "yes"
-      ).length;
-  }, [data]);
-
-  const unlockedMilestones =
-    useMemo(() => {
-      return milestones.filter(
-        (milestone) =>
-          bestStreak >= milestone.days
-      );
-    }, [bestStreak]);
-
-  const nextMilestone =
-    useMemo(() => {
-      return milestones.find(
-        (milestone) =>
-          streak < milestone.days
-      );
-    }, [streak]);
-
-  const editingKey =
-    editingDate
-      ? getDateKey(editingDate)
-      : null;
-
-  const editingAnswer =
-    editingKey
-      ? data[editingKey]?.answer
-      : null;
-
-  const changeMonth = (direction) => {
-    setSelectedMonth((current) => {
-      const newDate =
-        new Date(current);
-
-      newDate.setMonth(
-        newDate.getMonth() +
-          direction
-      );
-
-      return newDate;
-    });
-  };
-
-  const changeYear = (direction) => {
-    setSelectedMonth((current) => {
-      const newDate =
-        new Date(current);
-
-      newDate.setFullYear(
-        newDate.getFullYear() +
-          direction
-      );
-
-      return newDate;
-    });
-  };
-
-  const openMonth = (month) => {
-    setSelectedMonth(
-      new Date(
-        selectedMonth.getFullYear(),
-        month,
-        1
-      )
-    );
-
-    setProgressView("month");
-  };
-
-  if (loading) {
+  function renderToday() {
     return (
-      <main className="app">
-        <div
-          className="phoneShell"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <p
-            style={{
-              color: "#526d69",
-              fontWeight: 700,
-            }}
+      <main className="todayScreen">
+        <div className="topBadge">
+          ♡
+        </div>
+
+        <p className="eyebrow">
+          היום שלך
+        </p>
+
+        <h1>
+          איך היה היום?
+        </h1>
+
+        {!todayEntry ? (
+          <>
+            <p className="subtitle">
+              עוד סימון קטן
+              בדרך למטרה שלך.
+              בלי לחץ, רק
+              עקביות 🤍
+            </p>
+
+            <div className="buttons">
+              <button
+                className="yes"
+                onClick={
+                  handleYes
+                }
+              >
+                כן, עמדתי בזה
+                💚
+              </button>
+
+              <button
+                className="no"
+                onClick={
+                  handleNo
+                }
+              >
+                לא היום
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="result">
+            <div
+              className={`resultIcon ${
+                todayEntry.answer ===
+                "yes"
+                  ? "resultYes"
+                  : "resultNo"
+              }`}
+            >
+              {todayEntry.answer ===
+              "yes"
+                ? "✓"
+                : "♡"}
+            </div>
+
+            <h2>
+              {
+                todayEntry.message
+              }
+            </h2>
+
+            <p>
+              היום כבר מסומן
+            </p>
+
+            <button
+              className="editButton"
+              onClick={
+                resetToday
+              }
+            >
+              שיניתי את דעתי
+            </button>
+          </div>
+        )}
+
+        <div className="miniStats">
+          <div>
+            <div className="statIcon">
+              🔥
+            </div>
+
+            <strong>
+              {streak}
+            </strong>
+
+            <span>
+              רצף נוכחי
+            </span>
+          </div>
+
+          <div>
+            <div className="statIcon">
+              🏆
+            </div>
+
+            <strong>
+              {bestStreak}
+            </strong>
+
+            <span>
+              שיא אישי
+            </span>
+          </div>
+        </div>
+
+        <div className="notificationCard">
+          <div>
+            <strong>
+              תזכורת יומית 🔔
+            </strong>
+
+            <span>
+              קבלי תזכורת
+              אם עוד לא
+              סימנת היום
+            </span>
+          </div>
+
+          <button
+            onClick={
+              handleEnableNotifications
+            }
           >
-            טוען את המסע שלך… 🤍
-          </p>
+            הפעלת תזכורת
+          </button>
+
+          {notificationStatus && (
+            <small>
+              {
+                notificationStatus
+              }
+            </small>
+          )}
         </div>
       </main>
     );
   }
 
-  return (
-    <main className="app">
-      <div className="phoneShell">
-        {syncError && (
-          <div
-            style={{
-              position: "fixed",
-              top: 16,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 200,
-              padding: "10px 16px",
-              borderRadius: 999,
-              background: "#fde8ee",
-              color: "#bd5873",
-              fontSize: 12,
-              fontWeight: 800,
-              boxShadow:
-                "0 8px 25px rgba(0,0,0,0.08)",
-            }}
-          >
-            {syncError}
-          </div>
-        )}
-
-        {celebration && (
-          <div
-            className={`milestoneOverlay ${celebration.level}`}
-          >
-            <div className="milestoneGlow" />
-
-            <div className="milestoneSpark sparkOne">
-              ✦
-            </div>
-
-            <div className="milestoneSpark sparkTwo">
-              ✧
-            </div>
-
-            <div className="milestoneSpark sparkThree">
-              ✦
-            </div>
-
-            <div className="milestoneSpark sparkFour">
-              ✧
-            </div>
-
-            <div className="milestoneContent">
-              <div className="milestoneEmoji">
-                {celebration.emoji}
-              </div>
-
-              <span className="milestoneLabel">
-                MILESTONE
-              </span>
-
-              <div className="milestoneNumber">
-                {celebration.days}
-              </div>
-
-              <div className="milestoneDays">
-                ימים ברצף
-              </div>
-
-              <h2>
-                {celebration.title}
-              </h2>
-
-              <p>
-                {celebration.message}
-              </p>
-
-              <div className="signature">
-                באהבה, גיא ❤️
-              </div>
-
-              <button
-                className="celebrationButton"
-                onClick={() =>
-                  setCelebration(null)
-                }
-              >
-                ממשיכים ✨
-              </button>
-            </div>
-          </div>
-        )}
-
-        {editingDate && (
-          <div
-            className="dayEditorBackdrop"
-            onClick={() =>
-              setEditingDate(null)
-            }
-          >
-            <div
-              className="dayEditorModal"
-              onClick={(event) =>
-                event.stopPropagation()
+  function renderMonth() {
+    return (
+      <>
+        <div className="monthCard">
+          <div className="monthHeader">
+            <button
+              onClick={() =>
+                changeMonth(1)
               }
             >
-              <button
-                className="dayEditorClose"
-                onClick={() =>
-                  setEditingDate(null)
-                }
-              >
-                ×
-              </button>
+              ‹
+            </button>
 
-              <p className="dayEditorEyebrow">
-                עריכת יום
-              </p>
-
+            <div>
               <h2>
-                {editingDate.toLocaleDateString(
-                  "he-IL",
-                  {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  }
-                )}
+                {
+                  monthNames[
+                    selectedMonth.getMonth()
+                  ]
+                }
               </h2>
 
-              {editingAnswer && (
-                <div
-                  className={`dayEditorCurrent ${
-                    editingAnswer === "yes"
-                      ? "dayEditorCurrentYes"
-                      : "dayEditorCurrentNo"
-                  }`}
-                >
-                  כרגע מסומן:{" "}
-                  <strong>
-                    {editingAnswer === "yes"
-                      ? "עמדתי במטרה ✓"
-                      : "לא היום ♡"}
-                  </strong>
-                </div>
-              )}
-
-              <div className="dayEditorActions">
-                <button
-                  className="dayEditorYes"
-                  onClick={() =>
-                    updateCalendarDay("yes")
-                  }
-                >
-                  ✓ עמדתי במטרה
-                </button>
-
-                <button
-                  className="dayEditorNo"
-                  onClick={() =>
-                    updateCalendarDay("no")
-                  }
-                >
-                  ♡ לא היום
-                </button>
-              </div>
-
-              {editingAnswer && (
-                <button
-                  className="dayEditorDelete"
-                  onClick={() =>
-                    updateCalendarDay(null)
-                  }
-                >
-                  מחיקת הסימון
-                </button>
-              )}
+              <span>
+                {selectedMonth.getFullYear()}
+              </span>
             </div>
+
+            <button
+              onClick={() =>
+                changeMonth(-1)
+              }
+            >
+              ›
+            </button>
           </div>
-        )}
 
-        {screen === "today" && (
-          <section className="todayScreen">
-            <div className="topBadge">
-              ♥
-            </div>
-
-            <p className="eyebrow">
-              היום
-            </p>
-
-            <h1>
-              מיטב, עמדת היום במטרה שלך?
-            </h1>
-
-            {!answer && (
-              <>
-                <p className="subtitle">
-                  לא צריך להיות מושלמת.
-                  רק להמשיך לבחור בעצמך 🤍
-                </p>
-
-                <div className="buttons">
-                  <button
-                    className="yes"
-                    onClick={handleYes}
-                  >
-                    כן ❤️
-                  </button>
-
-                  <button
-                    className="no"
-                    onClick={handleNo}
-                  >
-                    לא היום
-                  </button>
-                </div>
-              </>
-            )}
-
-            {answer && (
-              <div className="result">
-                <div
-                  className={`resultIcon ${
-                    answer === "yes"
-                      ? "resultYes"
-                      : "resultNo"
-                  }`}
+          <div className="weekDays">
+            {weekDays.map(
+              (day) => (
+                <span
+                  key={day}
                 >
-                  {answer === "yes"
-                    ? "✓"
-                    : "♡"}
-                </div>
+                  {day}
+                </span>
+              )
+            )}
+          </div>
 
-                <h2>{message}</h2>
+          <div className="calendar">
+            {buildCalendarDays()}
+          </div>
+        </div>
 
-                <p>
-                  {answer === "yes"
-                    ? "עוד יום קטן שעושה הבדל גדול ✨"
-                    : "היום נגמר. הדרך ממשיכה מחר."}
-                </p>
+        <div className="statsGrid">
+          <div className="statCard">
+            <span>
+              ימים שסומנו
+            </span>
 
+            <strong>
+              {
+                currentMonthStats.total
+              }
+            </strong>
+          </div>
+
+          <div className="statCard">
+            <span>
+              ימים במטרה
+            </span>
+
+            <strong>
+              {
+                currentMonthStats.yes
+              }
+            </strong>
+          </div>
+
+          <div className="statCard">
+            <span>
+              לא היום
+            </span>
+
+            <strong>
+              {
+                currentMonthStats.no
+              }
+            </strong>
+          </div>
+
+          <div className="statCard">
+            <span>
+              אחוז הצלחה
+            </span>
+
+            <strong>
+              {
+                currentMonthStats.percentage
+              }
+              %
+            </strong>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function renderYear() {
+    const year =
+      selectedMonth.getFullYear();
+
+    return (
+      <>
+        <div className="yearHeader">
+          <button
+            onClick={() =>
+              changeYear(1)
+            }
+          >
+            ‹
+          </button>
+
+          <h2>{year}</h2>
+
+          <button
+            onClick={() =>
+              changeYear(-1)
+            }
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="yearGrid">
+          {monthNames.map(
+            (
+              monthName,
+              monthIndex
+            ) => {
+              const stats =
+                getMonthStats(
+                  data,
+                  year,
+                  monthIndex
+                );
+
+              return (
                 <button
-                  className="editButton"
-                  onClick={resetToday}
-                >
-                  שיניתי את דעתי
-                </button>
-              </div>
-            )}
-
-            <div className="miniStats">
-              <div>
-                <span className="statIcon">
-                  🔥
-                </span>
-
-                <strong>
-                  {streak}
-                </strong>
-
-                <span>
-                  רצף נוכחי
-                </span>
-              </div>
-
-              <div>
-                <span className="statIcon">
-                  ✓
-                </span>
-
-                <strong>
-                  {monthInfo.yesCount}
-                </strong>
-
-                <span>
-                  הצלחות החודש
-                </span>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {screen === "progress" && (
-          <section className="progressScreen">
-            <div className="progressHeader">
-              <div>
-                <p className="eyebrow">
-                  התקדמות
-                </p>
-
-                <h1>
-                  המסע שלך
-                </h1>
-              </div>
-
-              <div className="heartMini">
-                ♥
-              </div>
-            </div>
-
-            <div className="heroStats">
-              <div className="heroStat">
-                <span>
-                  הרצף הכי ארוך
-                </span>
-
-                <strong>
-                  {bestStreak}
-                </strong>
-
-                <small>
-                  ימים
-                </small>
-              </div>
-
-              <div className="heroDivider" />
-
-              <div className="heroStat">
-                <span>
-                  Total wins
-                </span>
-
-                <strong>
-                  {totalWins}
-                </strong>
-
-                <small>
-                  ימים מוצלחים
-                </small>
-              </div>
-            </div>
-
-            <div className="viewSwitch">
-              <button
-                className={
-                  progressView === "month"
-                    ? "viewActive"
-                    : ""
-                }
-                onClick={() =>
-                  setProgressView("month")
-                }
-              >
-                חודש
-              </button>
-
-              <button
-                className={
-                  progressView === "year"
-                    ? "viewActive"
-                    : ""
-                }
-                onClick={() =>
-                  setProgressView("year")
-                }
-              >
-                שנה
-              </button>
-            </div>
-
-            {progressView === "month" && (
-              <>
-                <div className="monthCard">
-                  <div className="monthHeader">
-                    <button
-                      onClick={() =>
-                        changeMonth(-1)
-                      }
-                    >
-                      ‹
-                    </button>
-
-                    <div>
-                      <h2>
-                        {monthNames[monthInfo.month]}
-                      </h2>
-
-                      <span>
-                        {monthInfo.year}
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() =>
-                        changeMonth(1)
-                      }
-                    >
-                      ›
-                    </button>
-                  </div>
-
-                  <div className="weekDays">
-                    {weekDays.map((day) => (
-                      <span key={day}>
-                        {day}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="calendar">
-                    {monthInfo.days.map(
-                      (item, index) => {
-                        if (!item) {
-                          return (
-                            <div
-                              key={`empty-${index}`}
-                            />
-                          );
-                        }
-
-                        return (
-                          <button
-                            key={item.key}
-                            type="button"
-                            disabled={item.future}
-                            onClick={() => {
-                              if (!item.future) {
-                                setEditingDate(
-                                  item.date
-                                );
-                              }
-                            }}
-                            className={`day ${
-                              item.status === "yes"
-                                ? "dayYes"
-                                : item.status === "no"
-                                ? "dayNo"
-                                : ""
-                            } ${
-                              item.future
-                                ? "dayFuture"
-                                : "dayClickable"
-                            }`}
-                          >
-                            {item.status === "yes"
-                              ? "✓"
-                              : item.status === "no"
-                              ? "♡"
-                              : item.day}
-                          </button>
-                        );
-                      }
-                    )}
-                  </div>
-                </div>
-
-                <div className="statsGrid">
-                  <div className="statCard">
-                    <span>
-                      הצלחה
-                    </span>
-
-                    <strong>
-                      {monthInfo.successRate}%
-                    </strong>
-                  </div>
-
-                  <div className="statCard">
-                    <span>
-                      עמדת במטרה
-                    </span>
-
-                    <strong>
-                      {monthInfo.yesCount}
-                    </strong>
-                  </div>
-
-                  <div className="statCard">
-                    <span>
-                      לא היום
-                    </span>
-
-                    <strong>
-                      {monthInfo.noCount}
-                    </strong>
-                  </div>
-
-                  <div className="statCard">
-                    <span>
-                      רצף נוכחי
-                    </span>
-
-                    <strong>
-                      {streak}
-                    </strong>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {progressView === "year" && (
-              <>
-                <div className="yearHeader">
-                  <button
-                    onClick={() =>
-                      changeYear(-1)
-                    }
-                  >
-                    ‹
-                  </button>
-
-                  <h2>
-                    {selectedMonth.getFullYear()}
-                  </h2>
-
-                  <button
-                    onClick={() =>
-                      changeYear(1)
-                    }
-                  >
-                    ›
-                  </button>
-                </div>
-
-                <div className="yearGrid">
-                  {yearStats.map(
-                    (month) => (
-                      <button
-                        key={month.name}
-                        className="yearMonthCard"
-                        onClick={() =>
-                          openMonth(month.month)
-                        }
-                      >
-                        <div className="yearMonthTop">
-                          <span>
-                            {month.name}
-                          </span>
-
-                          <strong>
-                            {month.successRate}%
-                          </strong>
-                        </div>
-
-                        <div className="progressTrack">
-                          <div
-                            className="progressFill"
-                            style={{
-                              width: `${month.successRate}%`,
-                            }}
-                          />
-                        </div>
-
-                        <div className="yearMonthBottom">
-                          <span>
-                            {month.yesCount} ✓
-                          </span>
-
-                          <span>
-                            {month.answeredCount} ימים
-                          </span>
-                        </div>
-                      </button>
-                    )
-                  )}
-                </div>
-              </>
-            )}
-
-            <div className="achievementsCard">
-              <div className="achievementsHeader">
-                <div>
-                  <p className="sectionEyebrow">
-                    MILESTONES
-                  </p>
-
-                  <h2>
-                    ההישגים שלך
-                  </h2>
-                </div>
-
-                <span className="achievementCount">
-                  {unlockedMilestones.length}/
-                  {milestones.length}
-                </span>
-              </div>
-
-              <div className="achievementRow">
-                {milestones.map(
-                  (milestone) => {
-                    const unlocked =
-                      bestStreak >=
-                      milestone.days;
-
-                    return (
-                      <div
-                        key={milestone.days}
-                        className={`achievement ${
-                          unlocked
-                            ? "achievementUnlocked"
-                            : "achievementLocked"
-                        }`}
-                      >
-                        <div className="achievementBubble">
-                          {unlocked
-                            ? milestone.emoji
-                            : "🔒"}
-                        </div>
-
-                        <strong>
-                          {milestone.days}
-                        </strong>
-
-                        <span>
-                          ימים
-                        </span>
-                      </div>
-                    );
+                  key={
+                    monthName
                   }
-                )}
-              </div>
+                  className="yearMonthCard"
+                  onClick={() => {
+                    setSelectedMonth(
+                      new Date(
+                        year,
+                        monthIndex,
+                        1
+                      )
+                    );
 
-              {nextMilestone ? (
-                <div className="nextMilestone">
-                  <div className="nextMilestoneText">
+                    setProgressView(
+                      "month"
+                    );
+                  }}
+                >
+                  <div className="yearMonthTop">
                     <span>
-                      הבא בתור
+                      {
+                        monthName
+                      }
                     </span>
 
                     <strong>
-                      {nextMilestone.emoji}{" "}
-                      {nextMilestone.days} ימים
+                      {
+                        stats.percentage
+                      }
+                      %
                     </strong>
                   </div>
 
-                  <div className="nextProgress">
+                  <div className="yearMonthBottom">
+                    <span>
+                      {
+                        stats.yes
+                      }{" "}
+                      הצלחות
+                    </span>
+
+                    <span>
+                      {
+                        stats.total
+                      }{" "}
+                      ימים
+                    </span>
+                  </div>
+
+                  <div className="progressTrack">
                     <div
+                      className="progressFill"
                       style={{
-                        width: `${Math.min(
-                          100,
-                          Math.round(
-                            (streak /
-                              nextMilestone.days) *
-                              100
-                          )
-                        )}%`,
+                        width: `${stats.percentage}%`,
                       }}
                     />
                   </div>
+                </button>
+              );
+            }
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderAchievements() {
+    return (
+      <div className="achievementsCard">
+        <div className="achievementsHeader">
+          <div>
+            <p className="sectionEyebrow">
+              ACHIEVEMENTS
+            </p>
+
+            <h2>
+              ההישגים שלך
+            </h2>
+          </div>
+
+          <div className="achievementCount">
+            {unlockedCount}/
+            {milestones.length}
+          </div>
+        </div>
+
+        <div className="achievementRow">
+          {milestones.map(
+            (milestone) => {
+              const unlocked =
+                bestStreak >=
+                milestone.days;
+
+              return (
+                <div
+                  key={
+                    milestone.days
+                  }
+                  className={`achievement ${
+                    unlocked
+                      ? "achievementUnlocked"
+                      : "achievementLocked"
+                  }`}
+                >
+                  <div className="achievementBubble">
+                    {unlocked
+                      ? milestone.emoji
+                      : "🔒"}
+                  </div>
+
+                  <strong>
+                    {
+                      milestone.days
+                    }
+                  </strong>
+
+                  <span>
+                    ימים
+                  </span>
                 </div>
-              ) : (
-                <div className="allUnlocked">
-                  👑 פתחת את כל ההישגים!
-                </div>
-              )}
+              );
+            }
+          )}
+        </div>
+
+        {nextMilestone ? (
+          <div className="nextMilestone">
+            <div className="nextMilestoneText">
+              <span>
+                היעד הבא
+              </span>
+
+              <strong>
+                {streak}/
+                {
+                  nextMilestone.days
+                }{" "}
+                ימים
+              </strong>
             </div>
 
-            <div className="legend">
-              <div>
-                <span className="legendDot yesDot" />
-                עמדת במטרה
-              </div>
-
-              <div>
-                <span className="legendDot noDot" />
-                לא היום
-              </div>
-
-              <div>
-                <span className="legendDot emptyDot" />
-                עדיין לא סומן
-              </div>
+            <div className="nextProgress">
+              <div
+                style={{
+                  width: `${Math.min(
+                    100,
+                    (streak /
+                      nextMilestone.days) *
+                      100
+                  )}%`,
+                }}
+              />
             </div>
-          </section>
+          </div>
+        ) : (
+          <div className="allUnlocked">
+            פתחת את כל
+            ההישגים 👑
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderProgress() {
+    return (
+      <main className="progressScreen">
+        <div className="progressHeader">
+          <div>
+            <p className="eyebrow">
+              המסע שלך
+            </p>
+
+            <h1>
+              התקדמות
+            </h1>
+          </div>
+
+          <div className="heartMini">
+            ♡
+          </div>
+        </div>
+
+        <div className="heroStats">
+          <div className="heroStat">
+            <span>
+              רצף נוכחי
+            </span>
+
+            <strong>
+              {streak}
+            </strong>
+
+            <small>
+              ימים
+            </small>
+          </div>
+
+          <div className="heroDivider" />
+
+          <div className="heroStat">
+            <span>
+              השיא שלך
+            </span>
+
+            <strong>
+              {bestStreak}
+            </strong>
+
+            <small>
+              ימים
+            </small>
+          </div>
+        </div>
+
+        <div className="viewSwitch">
+          <button
+            className={
+              progressView ===
+              "month"
+                ? "viewActive"
+                : ""
+            }
+            onClick={() =>
+              setProgressView(
+                "month"
+              )
+            }
+          >
+            חודש
+          </button>
+
+          <button
+            className={
+              progressView ===
+              "year"
+                ? "viewActive"
+                : ""
+            }
+            onClick={() =>
+              setProgressView(
+                "year"
+              )
+            }
+          >
+            שנה
+          </button>
+        </div>
+
+        {progressView ===
+        "month"
+          ? renderMonth()
+          : renderYear()}
+
+        {renderAchievements()}
+
+        <div className="legend">
+          <div>
+            <span className="legendDot yesDot" />
+            עמדתי במטרה
+          </div>
+
+          <div>
+            <span className="legendDot noDot" />
+            לא היום
+          </div>
+
+          <div>
+            <span className="legendDot emptyDot" />
+            לא סומן
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="app">
+        <div className="loadingScreen">
+          <div>
+            ♡
+          </div>
+
+          <p>
+            טוען את המסע
+            שלך… 🤍
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <div className="phoneShell">
+        {screen === "today"
+          ? renderToday()
+          : renderProgress()}
+
+        {syncError && (
+          <div className="syncError">
+            {syncError}
+          </div>
         )}
 
         <nav className="bottomNav">
@@ -1426,26 +1609,208 @@ function App() {
               setScreen("today")
             }
           >
-            <span>♥</span>
+            <span>♡</span>
             היום
           </button>
 
           <button
             className={
-              screen === "progress"
+              screen ===
+              "progress"
                 ? "activeNav"
                 : ""
             }
             onClick={() =>
-              setScreen("progress")
+              setScreen(
+                "progress"
+              )
             }
           >
-            <span>◫</span>
+            <span>◷</span>
             התקדמות
           </button>
         </nav>
       </div>
-    </main>
+
+      {editingDate && (
+        <div
+          className="dayEditorBackdrop"
+          onClick={() =>
+            setEditingDate(
+              null
+            )
+          }
+        >
+          <div
+            className="dayEditorModal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <button
+              className="dayEditorClose"
+              onClick={() =>
+                setEditingDate(
+                  null
+                )
+              }
+            >
+              ×
+            </button>
+
+            <p className="dayEditorEyebrow">
+              עריכת יום
+            </p>
+
+            <h2>
+              {dateFromKey(
+                editingDate
+              ).toLocaleDateString(
+                "he-IL",
+                {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                }
+              )}
+            </h2>
+
+            {data[
+              editingDate
+            ] && (
+              <div
+                className={`dayEditorCurrent ${
+                  data[
+                    editingDate
+                  ].answer ===
+                  "yes"
+                    ? "dayEditorCurrentYes"
+                    : "dayEditorCurrentNo"
+                }`}
+              >
+                כרגע מסומן:{" "}
+                {data[
+                  editingDate
+                ].answer ===
+                "yes"
+                  ? "עמדתי במטרה ✓"
+                  : "לא היום ♡"}
+              </div>
+            )}
+
+            <div className="dayEditorActions">
+              <button
+                className="dayEditorYes"
+                onClick={() =>
+                  updateCalendarDay(
+                    "yes"
+                  )
+                }
+              >
+                עמדתי בזה ✓
+              </button>
+
+              <button
+                className="dayEditorNo"
+                onClick={() =>
+                  updateCalendarDay(
+                    "no"
+                  )
+                }
+              >
+                לא היום ♡
+              </button>
+            </div>
+
+            {data[
+              editingDate
+            ] && (
+              <button
+                className="dayEditorDelete"
+                onClick={
+                  removeCalendarDay
+                }
+              >
+                מחיקת הסימון
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {celebration && (
+        <div
+          className={`milestoneOverlay ${celebration.level}`}
+        >
+          <div className="milestoneGlow" />
+
+          <span className="milestoneSpark sparkOne">
+            ✦
+          </span>
+
+          <span className="milestoneSpark sparkTwo">
+            ✧
+          </span>
+
+          <span className="milestoneSpark sparkThree">
+            ✦
+          </span>
+
+          <span className="milestoneSpark sparkFour">
+            ✧
+          </span>
+
+          <div className="milestoneContent">
+            <div className="milestoneEmoji">
+              {
+                celebration.emoji
+              }
+            </div>
+
+            <div className="milestoneLabel">
+              MILESTONE
+            </div>
+
+            <div className="milestoneNumber">
+              {
+                celebration.days
+              }
+            </div>
+
+            <div className="milestoneDays">
+              ימים ברצף
+            </div>
+
+            <h2>
+              {
+                celebration.title
+              }
+            </h2>
+
+            <p>
+              {
+                celebration.message
+              }
+            </p>
+
+            <div className="signature">
+              באהבה, גיא ❤️
+            </div>
+
+            <button
+              className="celebrationButton"
+              onClick={() =>
+                setCelebration(
+                  null
+                )
+              }
+            >
+              ממשיכים 💚
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
